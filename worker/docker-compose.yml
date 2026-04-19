@@ -12,6 +12,7 @@ x-airflow-common: &airflow-common
 services:
   airflow-worker:
     <<: *airflow-common
+    hostname: ${CELERY_HOSTNAME}
     command: airflow celery worker --autoscale 4,1 -H ${CELERY_HOSTNAME} -q ${QUEUES}
     healthcheck:
       test:
