@@ -13,7 +13,8 @@ services:
 
   airflow-apiserver:
     <<: *airflow-common
-    command: api-server
+    command: >
+      bash -c "pip install 'apache-airflow-core[gunicorn]' && airflow api-server"
     ports:
       - "8080:8080"
     restart: always
