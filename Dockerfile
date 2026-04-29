@@ -12,7 +12,7 @@ USER airflow
 ARG EXTRA_REQUIREMENTS=""
 
 RUN if [ -n "$EXTRA_REQUIREMENTS" ]; then \
-      pip install --no-cache-dir $EXTRA_REQUIREMENTS ; \
+    pip install --no-cache-dir $EXTRA_REQUIREMENTS ; \
     fi
 
 RUN pip install --no-cache-dir gunicorn apache-airflow-providers-celery
