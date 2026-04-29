@@ -1,11 +1,20 @@
 services:
   rabbitmq:
     image: rabbitmq:3.12-management
-    container_name: rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=USER
-      - RABBITMQ_DEFAULT_PASS=PASSWORD
+    container_name: rabbitmq-node
     restart: always
+    # Aquí aplicamos la ruta relativa que calculamos:
+    env_file:
+      - ../.env
+    ports:
+      - "5672:5672"   # Puerto AMQP (Airflow y Celery hablarán por aquí)
+      - "15672:15672" # Puerto Management (Tu Nginx Proxy apuntará aquí)
+    volumes:
+      # Usamos "Volúmenes Nombrados" (explicación abajo)
+      - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_logs:/var/log/rabbitmq
+
+# Declaración obligatoria de los volúmenes nombrados
+volumes:
+  rabbitmq_data:
+  rabbitmq_logs:

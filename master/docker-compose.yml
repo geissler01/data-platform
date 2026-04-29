@@ -1,23 +1,40 @@
-x-airflow-common: &airflow-common
+x-airflow-common:
+  &airflow-common
   build:
     context: ..
     args:
+      # Instalará psycopg2, celery y el proveedor de amazon para los logs en S3
       EXTRA_REQUIREMENTS: ${EXTRA_REQUIREMENTS}
   env_file:
     - ../.env
+  environment:
+    - PYTHONPATH=${PYTHONPATH}
+  user: "${AIRFLOW_UID:-50000}:0"
   volumes:
     - airflow_logs:/opt/airflow/logs
     - airflow_config:/opt/airflow/config
     - airflow_plugins:/opt/airflow/plugins
+    # Mapeo de tu código fuente
     - ../pipelines:/opt/pipelines
-  user: "${AIRFLOW_UID:-50000}:0"
 
 services:
-
-  airflow-apiserver:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
+  # 1. El Inicializador (Migra DB y crea el Admin automáticamente)
+  airflow-init:
     <<: *airflow-common
+    container_name: airflow-init
+    entrypoint: /bin/bash
+    user: "0:0"
+    command:
+      - -c
+      - |
+        mkdir -p /opt/pipelines/dags /opt/airflow/{logs,plugins,config}
+        chown -R "${AIRFLOW_UID}:0" /opt/pipelines /opt/airflow
+        /entrypoint airflow db migrate
+
+  # 2. El Servidor API (Crucial en Airflow 3 - Aquí apuntará Nginx)
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: airflow-apiserver
     command: airflow api-server
     ports:
       - "8080:8080"
@@ -26,67 +43,41 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # 3. El Planificador principal
   airflow-scheduler:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
     <<: *airflow-common
+    container_name: airflow-scheduler
     command: scheduler
     restart: always
     depends_on:
       airflow-init:
         condition: service_completed_successfully
 
+  # 4. Procesador de DAGs (Independiente)
   airflow-dag-processor:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
     <<: *airflow-common
+    container_name: airflow-dag-processor
     command: dag-processor
     restart: always
     depends_on:
       airflow-init:
         condition: service_completed_successfully
 
+  # 5. Triggerer (Para tareas asíncronas)
   airflow-triggerer:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
     <<: *airflow-common
+    container_name: airflow-triggerer
     command: triggerer
     restart: always
     depends_on:
       airflow-init:
         condition: service_completed_successfully
 
-  airflow-init:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
-    <<: *airflow-common
-    entrypoint: /bin/bash
-    user: "0:0"
-    command:
-      - -c
-      - |
-        mkdir -p /opt/airflow/{logs,dags,plugins,config}
-        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
-        /entrypoint airflow db migrate
-
-  airflow-cli:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
-    <<: *airflow-common
-    profiles:
-      - debug
-    command:
-      - bash
-      - -c
-      - airflow
-
+  # 6. Flower (Monitor visual para Celery y RabbitMQ)
   flower:
-    environment:
-      - PYTHONPATH=${PYTHONPATH}
     <<: *airflow-common
+    container_name: airflow-flower
     command: celery flower
-    profiles:
-      - flower
     ports:
       - "5555:5555"
     restart: always
@@ -98,3 +89,112 @@ volumes:
   airflow_logs:
   airflow_config:
   airflow_plugins:
+
+
+
+
+
+
+
+
+
+# x-airflow-common: &airflow-common
+#   build:
+#     context: ..
+#     args:
+#       EXTRA_REQUIREMENTS: ${EXTRA_REQUIREMENTS}
+#   env_file:
+#     - ../.env
+#   volumes:
+#     - airflow_logs:/opt/airflow/logs
+#     - airflow_config:/opt/airflow/config
+#     - airflow_plugins:/opt/airflow/plugins
+#     - ../pipelines:/opt/pipelines
+#   user: "${AIRFLOW_UID:-50000}:0"
+
+# services:
+
+#   airflow-apiserver:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     command: airflow api-server
+#     ports:
+#       - "8080:8080"
+#     restart: always
+#     depends_on:
+#       airflow-init:
+#         condition: service_completed_successfully
+
+#   airflow-scheduler:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     command: scheduler
+#     restart: always
+#     depends_on:
+#       airflow-init:
+#         condition: service_completed_successfully
+
+#   airflow-dag-processor:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     command: dag-processor
+#     restart: always
+#     depends_on:
+#       airflow-init:
+#         condition: service_completed_successfully
+
+#   airflow-triggerer:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     command: triggerer
+#     restart: always
+#     depends_on:
+#       airflow-init:
+#         condition: service_completed_successfully
+
+#   airflow-init:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     entrypoint: /bin/bash
+#     user: "0:0"
+#     command:
+#       - -c
+#       - |
+#         mkdir -p /opt/airflow/{logs,dags,plugins,config}
+#         chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+#         /entrypoint airflow db migrate
+
+#   airflow-cli:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     profiles:
+#       - debug
+#     command:
+#       - bash
+#       - -c
+#       - airflow
+
+#   flower:
+#     environment:
+#       - PYTHONPATH=${PYTHONPATH}
+#     <<: *airflow-common
+#     command: celery flower
+#     profiles:
+#       - flower
+#     ports:
+#       - "5555:5555"
+#     restart: always
+#     depends_on:
+#       airflow-init:
+#         condition: service_completed_successfully
+
+# volumes:
+#   airflow_logs:
+#   airflow_config:
+#   airflow_plugins:
